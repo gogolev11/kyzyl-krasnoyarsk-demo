@@ -79,17 +79,28 @@
   function newCode() { return 'КК-' + (1000 + Math.floor(Math.random() * 9000)); }
 
   // ---------- Рейсы ----------
+  function allDrivers() { return DATA.drivers.concat(state.extraDrivers || []); }
+  function driverFor(tripId, date) {
+    var list = allDrivers();
+    var over = (state.driverOverride || {})[tripId];
+    var d = list.filter(function (x) { return x.id === over; })[0];
+    // по умолчанию водители меняются каждый оборот (туда и обратно)
+    return d || DATA.drivers[Math.floor(dayIndex(date) / 2) % DATA.drivers.length];
+  }
   function makeTrip(date, s) {
-    var crewKey = s.crews[dayIndex(date) % s.crews.length];
     var p = s.depart.split(':');
+    var id = date + '_' + s.id;
+    var d = driverFor(id, date);
     return {
-      id: date + '_' + s.id, date: date, sched: s, dir: s.direction,
+      id: id, date: date, sched: s, dir: s.direction,
       stops: DATA.directions[s.direction].stops,
-      start: +p[0] * 60 + +p[1], crew: DATA.crews[crewKey]
+      start: +p[0] * 60 + +p[1],
+      crew: { driverId: d.id, driver: d.name, phone: d.phone, vehicle: DATA.vehicle.model, plate: DATA.vehicle.plate }
     };
   }
+  function runsOn(s, date) { return s.parity == null || dayIndex(date) % 2 === s.parity; }
   function tripsFor(date, dir) {
-    return DATA.schedule.filter(function (s) { return !dir || s.direction === dir; })
+    return DATA.schedule.filter(function (s) { return (!dir || s.direction === dir) && runsOn(s, date); })
       .map(function (s) { return makeTrip(date, s); })
       .sort(function (a, b) { return a.start - b.start; });
   }
@@ -202,9 +213,9 @@
   }
   function crewHtml(trip) {
     var c = trip.crew;
-    return '<div class="crew"><div>Водитель: <b>' + esc(c.driver) + '</b>, <a href="tel:' +
+    return '<div class="crew"><div>Водитель рейса: <b>' + esc(c.driver) + '</b>, <a href="tel:' +
       c.phone.replace(/[^\d+]/g, '') + '">' + esc(c.phone) + '</a></div><div class="muted">' +
-      esc(c.vehicle) + ', ' + esc(c.plate) + '</div></div>';
+      esc(c.vehicle) + ', ' + esc(c.plate) + '</div><div class="muted small">Вопросы по поездке — сразу водителю этого рейса.</div></div>';
   }
   function legendHtml(carrier) {
     return '<div class="legend"><span><i></i>свободно</span><span><i class="l-busy"></i>занято</span>' +
@@ -291,6 +302,16 @@
         (free ? 'Свободно ' + free + ' из 13' : '') + '</div></div>' + btn + '</div></article>';
     }).join('');
 
+    function noTripHtml() {
+      var next = null;
+      for (var k = 1; k < 30 && !next; k++) {
+        var dt = addDays(search.date, k);
+        if (tripsFor(dt, search.dir).length) next = dt;
+      }
+      return '<div class="panel"><p style="margin-top:0">В этот день рейса ' + esc(DATA.directions[search.dir].label) +
+        ' нет: машина одна и в этот день идёт в обратную сторону.</p>' +
+        (next ? '<button type="button" class="btn btn-primary" data-date="' + next + '">Ближайший рейс: ' + dateLabel(next) + '</button>' : '') + '</div>';
+    }
     var mine = state.bookings.filter(function (b) { return b.source === 'site' && b.status === 'paid'; }).slice(-3).reverse();
     var mineHtml = mine.length ? '<h2>Мои брони в этом браузере</h2><ul class="blist">' + mine.map(function (b) {
       var t = tripById(b.tripId);
@@ -299,7 +320,7 @@
     }).join('') + '</ul>' : '';
 
     app.innerHTML =
-      '<h1>Билеты на микроавтобус</h1><p class="lead">Toyota HiAce, 13 мест. Можно ехать весь путь или только до Абакана, или из Абакана.</p>' +
+      '<h1>Билеты на микроавтобус</h1><p class="lead">Toyota HiAce, 13 мест. Можно ехать весь путь, только до Абакана или из Абакана. У каждого рейса указан телефон его водителя.</p>' +
       '<div class="panel stack">' +
       '<div class="seg" role="group" aria-label="Направление">' + Object.keys(DATA.directions).map(function (k) {
         return '<button type="button" data-dir="' + k + '" aria-pressed="' + (k === search.dir) + '">' + esc(DATA.directions[k].label) + '</button>';
@@ -308,7 +329,7 @@
       '<div><p class="label">Куда</p><div class="chips">' + toChips + '</div></div>' +
       '</div>' +
       '<h2>Дата отправления</h2><div class="dates">' + dates + '</div>' +
-      '<h2>Рейсы на ' + dateLabel(search.date) + '</h2>' + trips + mineHtml;
+      '<h2>Рейсы на ' + dateLabel(search.date) + '</h2>' + (trips || noTripHtml()) + mineHtml;
 
     app.onclick = function (e) {
       var t = e.target.closest('button'); if (!t) return;
@@ -566,6 +587,14 @@
       '<h2>Дата</h2><div class="dates">' + dates + '</div>' +
       '<h2>Рейс</h2><div class="chips">' + tripChips + '</div>' +
       '<div class="trip" style="margin-top:12px">' + timelineHtml(trip, trip.stops[0], trip.stops[2]) + crewHtml(trip) + '</div>' +
+      '<div class="panel stack" style="margin-top:12px"><div><p class="label">Водитель на этот рейс (его телефон увидят пассажиры)</p><div class="chips">' +
+      allDrivers().map(function (d) {
+        return '<button type="button" class="chip" data-driver="' + esc(d.id) + '" aria-pressed="' + (d.id === trip.crew.driverId) + '">' + esc(d.name) + '</button>';
+      }).join('') + '</div></div>' +
+      '<details><summary class="small" style="cursor:pointer;color:var(--accent)">Добавить нового водителя</summary><div class="stack" style="margin-top:10px">' +
+      '<div class="field"><label for="dname">Имя и фамилия</label><input id="dname" autocomplete="off" placeholder="Например, Тест Тестов"></div>' +
+      '<div class="field"><label for="dphone">Телефон</label><input id="dphone" type="tel" autocomplete="off" placeholder="+7 900 000-00-00"></div>' +
+      '<button type="button" class="btn btn-ghost" data-adddriver>Добавить водителя</button></div></details></div>' +
       '<div class="stats" style="margin-top:12px">' + legStats +
       '<div class="stat"><b class="num">' + money(online) + '</b><span>оплачено онлайн (тест)</span></div>' +
       '<div class="stat"><b class="num">' + byPhone + '</b><span>' + seatWord(byPhone) + ' продано по телефону</span></div></div>' +
@@ -598,6 +627,16 @@
         if (bid.indexOf('seed-') === 0) { state.removedSeeds = state.removedSeeds || {}; state.removedSeeds[bid] = 1; }
         else state.bookings = state.bookings.filter(function (b) { return b.id !== bid; });
         save();
+      }
+      else if (t.dataset.driver) {
+        state.driverOverride = state.driverOverride || {}; state.driverOverride[trip.id] = t.dataset.driver; save();
+      }
+      else if (t.hasAttribute('data-adddriver')) {
+        var dn = (document.getElementById('dname').value || '').trim(), dp = (document.getElementById('dphone').value || '').trim();
+        if (dn.length < 2 || dp.replace(/\D/g, '').length < 10) { var dl = document.getElementById('dphone'); dl.setCustomValidity('Введите имя и телефон (не меньше 10 цифр)'); dl.reportValidity(); dl.setCustomValidity(''); return; }
+        var nd = { id: 'x' + Date.now(), name: dn, phone: dp };
+        state.extraDrivers = (state.extraDrivers || []).concat([nd]);
+        state.driverOverride = state.driverOverride || {}; state.driverOverride[trip.id] = nd.id; save();
       }
       else if (t.hasAttribute('data-print')) { window.print(); return; }
       else if (t.hasAttribute('data-reset')) {

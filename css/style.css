@@ -109,7 +109,7 @@ h3 { font-size: 16px; margin: 16px 0 8px; }
 .timeline .leg { grid-column: 2 / 4; font-size: 13px; color: var(--muted); }
 .timeline li:not(.on) .stopname { color: var(--muted); }
 .crew { display: grid; gap: 2px; font-size: 14px; border-top: 1px dashed var(--line); padding-top: 10px; }
-.crew a { font-weight: 600; text-decoration: none; }
+.crew a { font-weight: 600; text-decoration: none; white-space: nowrap; }
 .trip-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .price { font-size: 22px; font-weight: 700; }
 .free { font-size: 14px; color: var(--ok); font-weight: 600; }
