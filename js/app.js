@@ -55,7 +55,7 @@
     return 'мест';
   }
   function allSeats() {
-    var s = [DATA.seatLayout.front];
+    var s = DATA.seatLayout.front ? [DATA.seatLayout.front] : [];
     DATA.seatLayout.rows.forEach(function (r) { s = s.concat(r); });
     return s;
   }
@@ -98,7 +98,15 @@
       crew: { driverId: d.id, driver: d.name, phone: d.phone, vehicle: DATA.vehicle.model, plate: DATA.vehicle.plate }
     };
   }
-  function runsOn(s, date) { return s.parity == null || dayIndex(date) % 2 === s.parity; }
+  function runsOn(s, date) { return !s.days || s.days.indexOf(parseIso(date).getDay()) >= 0; }
+  var WDFULL = ['воскресеньям', 'понедельникам', 'вторникам', 'средам', 'четвергам', 'пятницам', 'субботам'];
+  function daysText(dir) {
+    var s = DATA.schedule.filter(function (x) { return x.direction === dir; })[0];
+    return s && s.days ? 'по ' + s.days.map(function (k) { return WDFULL[k]; }).join(' и ') + ', выезд в ' + s.depart : '';
+  }
+  function pointsOf(trip, sid) { return (trip.sched.points && trip.sched.points[sid]) || []; }
+  function pointOf(trip, sid) { var p = pointsOf(trip, sid)[0]; return p ? p.name : ''; }
+  function approx(trip, k) { return (trip.sched.approx || []).indexOf(k) >= 0; }
   function tripsFor(date, dir) {
     return DATA.schedule.filter(function (s) { return (!dir || s.direction === dir) && runsOn(s, date); })
       .map(function (s) { return makeTrip(date, s); })
@@ -198,6 +206,7 @@
       if (k === 0) t = clock(trip, at(trip, 0, 'dep')).t;
       else if (k === trip.stops.length - 1) t = clock(trip, at(trip, k, 'arr')).t;
       else t = clock(trip, at(trip, k, 'arr')).t + '–' + clock(trip, at(trip, k, 'dep')).t;
+      if (approx(trip, k)) t = '≈' + t;
       var c = clock(trip, at(trip, k, k === 0 ? 'dep' : 'arr'));
       var plus = c.plus ? ' <small class="muted">' + dateLabel(c.date) + '</small>' : '';
       var leg = '';
@@ -205,10 +214,14 @@
         var d = at(trip, k + 1, 'arr') - at(trip, k, 'dep');
         leg = '<span class="leg">в пути ' + dur(d) + (k + 1 < trip.stops.length - 1 ? '' : '') + '</span>';
       }
-      var note = (k > 0 && k < trip.stops.length - 1) ? ' <small class="muted">стоянка ' +
-        (at(trip, k, 'dep') - at(trip, k, 'arr')) + ' мин</small>' : '';
+      var note = (k > 0 && k < trip.stops.length - 1) ? ' <small class="muted">' + (approx(trip, k) ? 'время уточняется' : 'стоянка ' +
+        (at(trip, k, 'dep') - at(trip, k, 'arr')) + ' мин') + '</small>' : '';
+      var pts = pointsOf(trip, sid);
+      var ptsHtml = pts.length ? '<span class="pts">' + pts.map(function (p) {
+        return '<span>' + (p.t != null && pts.length > 1 ? '<b class="num">' + hm(trip.start + p.t) + '</b> ' : '') + esc(p.name) + '</span>';
+      }).join('') + '</span>' : '';
       return '<li class="' + (on ? 'on ' : '') + (segOn ? 'seg-on' : '') + '"><span class="stopname">' +
-        esc(stopName(sid)) + note + '</span><span class="t num">' + t + plus + '</span>' + leg + '</li>';
+        esc(stopName(sid)) + note + '</span><span class="t num">' + t + plus + '</span>' + ptsHtml + leg + '</li>';
     }).join('') + '</ol>';
   }
   function crewHtml(trip) {
@@ -241,7 +254,7 @@
       return '<button type="button" class="' + cls + '" data-seat="' + s + '" aria-label="' + label +
         '" aria-pressed="' + (sel || o.picked === s) + '"' + dis + '><span class="n">' + s + '</span><span class="bars">' + bars + '</span></button>';
     }
-    var cab = '<div class="driver"><span class="wheel"></span>водитель</div><div class="empty-slot"></div>' + seatBtn(DATA.seatLayout.front);
+    var cab = '<div class="driver"><span class="wheel"></span>водитель</div><div class="empty-slot"></div>' + (DATA.seatLayout.front ? seatBtn(DATA.seatLayout.front) : '<div class="driver">не продаётся</div>');
     var rows = DATA.seatLayout.rows.map(function (r) { return r.map(seatBtn).join(''); }).join('');
     return '<div class="van" role="group" aria-label="Схема салона Toyota HiAce"><span class="van-door"></span>' +
       '<div class="van-cab">' + cab + '</div><div class="van-rows">' + rows + '</div></div>';
@@ -299,7 +312,7 @@
         (arr.plus ? ' <small>прибытие ' + dateLabel(arr.date) + '</small>' : '') + '</div><div class="trip-dur">' + dur(total) + '</div></div>' +
         timelineHtml(trip, search.from, search.to) + crewHtml(trip) +
         '<div class="trip-foot"><div><div class="price num">' + money(price) + '</div><div class="free ' + freeCls + '">' +
-        (free ? 'Свободно ' + free + ' из 13' : '') + '</div></div>' + btn + '</div></article>';
+        (free ? 'Свободно ' + free + ' из ' + allSeats().length : '') + '</div></div>' + btn + '</div></article>';
     }).join('');
 
     function noTripHtml() {
@@ -309,7 +322,7 @@
         if (tripsFor(dt, search.dir).length) next = dt;
       }
       return '<div class="panel"><p style="margin-top:0">В этот день рейса ' + esc(DATA.directions[search.dir].label) +
-        ' нет: машина одна и в этот день идёт в обратную сторону.</p>' +
+        ' нет. Рейсы ' + esc(DATA.directions[search.dir].label) + ' ' + esc(daysText(search.dir)) + '.</p>' +
         (next ? '<button type="button" class="btn btn-primary" data-date="' + next + '">Ближайший рейс: ' + dateLabel(next) + '</button>' : '') + '</div>';
     }
     var mine = state.bookings.filter(function (b) { return b.source === 'site' && b.status === 'paid'; }).slice(-3).reverse();
@@ -320,7 +333,7 @@
     }).join('') + '</ul>' : '';
 
     app.innerHTML =
-      '<h1>Билеты на микроавтобус</h1><p class="lead">Toyota HiAce, 13 мест. Можно ехать весь путь, только до Абакана или из Абакана. У каждого рейса указан телефон его водителя.</p>' +
+      '<h1>Билеты на микроавтобус</h1><p class="lead">Toyota HiAce, ' + allSeats().length + ' мест. Рейсы из Кызыла ' + esc(daysText('to_krs')) + ', из Красноярска ' + esc(daysText('to_kyz')) + '. Можно ехать весь путь, только до Абакана или из Абакана. У каждого рейса указан телефон его водителя.</p>' +
       '<div class="panel stack">' +
       '<div class="seg" role="group" aria-label="Направление">' + Object.keys(DATA.directions).map(function (k) {
         return '<button type="button" data-dir="' + k + '" aria-pressed="' + (k === search.dir) + '">' + esc(DATA.directions[k].label) + '</button>';
@@ -489,7 +502,7 @@
       '✅ Бронь ' + b.code + ' оплачена\n\n' +
       '🚐 ' + stopName(b.from) + ' → ' + stopName(b.to) + '\n' +
       '📅 ' + dateLabel(dep.date) + ', отправление в ' + dep.t + '\n' +
-      '📍 Посадка: ' + stopName(b.from) + ', ' + DATA.stops[b.from].point + '\n' +
+      '📍 Посадка: ' + stopName(b.from) + ', ' + pointOf(trip, b.from) + '\n' +
       '🏁 Прибытие: ' + arr.t + (arr.plus ? ' (' + dateLabel(arr.date) + ')' : '') + '\n' +
       '💺 Места: ' + b.seats.join(', ') + '\n' +
       '👤 Водитель: ' + c.driver + ', ' + c.phone + '\n' +
@@ -527,7 +540,7 @@
       '<div class="panel"><dl class="sum">' +
       '<dt>Рейс</dt><dd>' + esc(stopName(b.from)) + ' → ' + esc(stopName(b.to)) + '</dd>' +
       '<dt>Отправление</dt><dd class="num">' + dateLabel(dep.date) + ', ' + dep.t + '</dd>' +
-      '<dt>Посадка</dt><dd>' + esc(DATA.stops[b.from].point) + '</dd>' +
+      '<dt>Посадка</dt><dd>' + esc(pointOf(trip, b.from)) + '</dd>' +
       '<dt>Места</dt><dd class="num">' + b.seats.join(', ') + '</dd>' +
       '<dt>Пассажир</dt><dd>' + esc(b.name) + '</dd>' +
       '<dt>Оплачено (демо)</dt><dd class="num">' + money(b.total) + '</dd></dl>' + crewHtml(trip) + '</div>' +
@@ -547,6 +560,14 @@
     }
     if (!carrierUi.date) carrierUi.date = today();
     var trips = tripsFor(carrierUi.date);
+    if (!trips.length) {
+      // в выбранный день рейсов нет — переходим на ближайший день с рейсом
+      for (var nd = 1; nd < 30 && !trips.length; nd++) {
+        var cand = addDays(carrierUi.date, nd);
+        if (tripsFor(cand).length) { carrierUi.date = cand; trips = tripsFor(cand); }
+      }
+      carrierUi.tripId = null;
+    }
     if (!carrierUi.tripId || carrierUi.tripId.split('_')[0] !== carrierUi.date) carrierUi.tripId = trips[0].id;
     var trip = tripById(carrierUi.tripId);
     var bookings = tripBookings(trip);
@@ -565,7 +586,7 @@
 
     var legStats = [0, 1].map(function (l) {
       var busy = allSeats().filter(function (s) { return occ[s][l]; }).length;
-      return '<div class="stat"><b class="num">' + busy + ' / 13</b><span>занято ' + esc(stopName(trip.stops[l])) + '–' + esc(stopName(trip.stops[l + 1])) + '</span></div>';
+      return '<div class="stat"><b class="num">' + busy + ' / ' + allSeats().length + '</b><span>занято ' + esc(stopName(trip.stops[l])) + '–' + esc(stopName(trip.stops[l + 1])) + '</span></div>';
     }).join('');
     var online = bookings.filter(function (b) { return b.status === 'paid'; })
       .reduce(function (s, b) { return s + priceOf(b.from, b.to) * b.seats.length; }, 0);
@@ -739,11 +760,17 @@
   // ---------- Правила (тестовые) ----------
   function viewRules() {
     setNav('rules');
-    var pts = Object.keys(DATA.stops).map(function (k) {
-      return '<dt>' + esc(DATA.stops[k].name) + '</dt><dd>' + esc(DATA.stops[k].point) + '</dd>';
+    var pts = DATA.schedule.map(function (s) {
+      var trip = makeTrip(today(), s);
+      return '<h3>' + esc(DATA.directions[s.direction].label) + ', ' + esc(daysText(s.direction)) + '</h3><dl class="rules">' +
+        trip.stops.map(function (sid) {
+          return '<dt>' + esc(stopName(sid)) + '</dt><dd>' + pointsOf(trip, sid).map(function (p) {
+            return (p.t != null ? hm(trip.start + p.t) + ' — ' : '') + esc(p.name);
+          }).join('<br>') + '</dd>';
+        }).join('') + '</dl>';
     }).join('');
     app.innerHTML = '<h1>Правила поездки</h1><p class="note warn">Тестовый текст для обсуждения. Настоящие правила утверждает перевозчик и проверяет юрист.</p>' +
-      '<h2>Точки посадки</h2><dl class="rules">' + pts + '</dl>' +
+      '<h2>Расписание и точки посадки</h2><p class="small muted">Время местное, во всех трёх городах одинаковое.</p>' + pts +
       '<h2>Отмена и возврат</h2><dl class="rules">' +
       '<dt>Отмена заранее</dt><dd>Вариант для обсуждения: полный возврат при отмене не позже чем за 2 часа до отправления, позже — с удержанием.</dd>' +
       '<dt>Как отменить</dt><dd>Кнопкой в сообщении бота или звонком перевозчику.</dd>' +
@@ -751,7 +778,7 @@
       '<h2>Багаж</h2><dl class="rules"><dt>Бесплатно</dt><dd>Одна сумка до 20 кг и ручная кладь.</dd>' +
       '<dt>Сверх нормы</dt><dd>По договорённости с водителем, при наличии места.</dd></dl>' +
       '<h2>Дети</h2><dl class="rules"><dt>Место</dt><dd>Каждому ребёнку нужно отдельное место; правила перевозки детей (удерживающие устройства, скидки) — уточнить перед запуском.</dd></dl>' +
-      '<h2>Перевозчик</h2><p>' + esc(DATA.carrier.name) + '<br><span class="muted">Телефон в демо тестовый: ' + esc(DATA.carrier.phone) + '</span></p>';
+      '<h2>Перевозчик</h2><p>' + esc(DATA.carrier.name) + (DATA.carrier.license ? '<br>' + esc(DATA.carrier.license) : '') + '<br><span class="muted">Телефон в демо тестовый: ' + esc(DATA.carrier.phone) + '</span></p>';
     app.onclick = null;
   }
 

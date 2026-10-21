@@ -106,6 +106,9 @@ h3 { font-size: 16px; margin: 16px 0 8px; }
 .timeline li:not(:last-child)::after { content: ""; position: absolute; left: 8px; top: 18px; bottom: -2px; width: 2px; background: var(--busy); }
 .timeline li.seg-on:not(:last-child)::after { background: var(--accent); }
 .timeline .t { font-weight: 600; white-space: nowrap; }
+.timeline .pts { grid-column: 2 / 4; display: grid; gap: 2px; font-size: 13px; color: var(--ink); margin-top: -2px; }
+.timeline .pts b { font-weight: 600; margin-right: 2px; }
+.timeline li:not(.on) .pts { color: var(--muted); }
 .timeline .leg { grid-column: 2 / 4; font-size: 13px; color: var(--muted); }
 .timeline li:not(.on) .stopname { color: var(--muted); }
 .crew { display: grid; gap: 2px; font-size: 14px; border-top: 1px dashed var(--line); padding-top: 10px; }
